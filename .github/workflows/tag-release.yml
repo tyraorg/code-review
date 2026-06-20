@@ -1,0 +1,25 @@
+name: Tag release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Update floating version tags
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update major and minor tags
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          MAJOR=$(echo "$TAG" | cut -d. -f1)
+          MINOR=$(echo "$TAG" | cut -d. -f1,2)
+          git tag -f "$MAJOR"
+          git tag -f "$MINOR"
+          git push --force origin "$MAJOR" "$MINOR"
