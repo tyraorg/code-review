@@ -9,6 +9,9 @@ inputs:
   github-token:
     description: 'GitHub token for reading PR data and posting reviews'
     required: true
+  reviewer-token:
+    description: 'PAT for the account that posts review comments. Defaults to github-token.'
+    required: false
   review-instructions:
     description: 'Path (relative to workspace) to the review instructions file'
     required: false

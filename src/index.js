@@ -11,13 +11,15 @@ import { postReview } from './post.js';
 async function run() {
   const apiKey = core.getInput('openai-api-key', { required: true });
   const githubToken = core.getInput('github-token', { required: true });
+  const reviewerToken = core.getInput('reviewer-token') || githubToken;
   const reviewInstructionsPath = core.getInput('review-instructions') || 'REVIEW.md';
   const model = core.getInput('model') || 'gpt-4o';
   const gateModel = core.getInput('gate-model') || 'gpt-4o-mini';
 
-  core.debug(`Config: model=${model} gate-model=${gateModel} review-instructions=${reviewInstructionsPath}`);
+  core.debug(`Config: model=${model} gate-model=${gateModel} review-instructions=${reviewInstructionsPath} reviewer=${reviewerToken !== githubToken ? 'custom' : 'github-token'}`);
 
   const octokit = github.getOctokit(githubToken);
+  const reviewOctokit = reviewerToken !== githubToken ? github.getOctokit(reviewerToken) : octokit;
   const ctx = github.context;
   const { owner, repo } = ctx.repo;
   const pullNumber = ctx.payload.pull_request?.number;
@@ -125,7 +127,7 @@ async function run() {
   });
 
   // 9. Post review
-  await postReview({ octokit, context: ctx, verdict, findings, core });
+  await postReview({ octokit: reviewOctokit, context: ctx, verdict, findings, core });
 }
 
 run().catch((e) => core.setFailed(e.message));

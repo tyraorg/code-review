@@ -25924,11 +25924,13 @@ ${finding.suggestion}
 async function run() {
   const apiKey = getInput("openai-api-key", { required: true });
   const githubToken = getInput("github-token", { required: true });
+  const reviewerToken = getInput("reviewer-token") || githubToken;
   const reviewInstructionsPath = getInput("review-instructions") || "REVIEW.md";
   const model = getInput("model") || "gpt-4o";
   const gateModel = getInput("gate-model") || "gpt-4o-mini";
-  debug(`Config: model=${model} gate-model=${gateModel} review-instructions=${reviewInstructionsPath}`);
+  debug(`Config: model=${model} gate-model=${gateModel} review-instructions=${reviewInstructionsPath} reviewer=${reviewerToken !== githubToken ? "custom" : "github-token"}`);
   const octokit = getOctokit(githubToken);
+  const reviewOctokit = reviewerToken !== githubToken ? getOctokit(reviewerToken) : octokit;
   const ctx = context2;
   const { owner, repo } = ctx.repo;
   const pullNumber = ctx.payload.pull_request?.number;
@@ -26021,7 +26023,7 @@ async function run() {
     gateModel,
     core: core_exports
   });
-  await postReview({ octokit, context: ctx, verdict, findings, core: core_exports });
+  await postReview({ octokit: reviewOctokit, context: ctx, verdict, findings, core: core_exports });
 }
 run().catch((e) => setFailed(e.message));
 /*! Bundled license information:
