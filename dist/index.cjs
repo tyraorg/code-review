@@ -25956,6 +25956,9 @@ async function run() {
   const prBody = ctx.payload.pull_request.body || "";
   const baseSha = ctx.payload.pull_request.base.sha;
   const headSha = ctx.payload.pull_request.head.sha;
+  const baseBranch = ctx.payload.pull_request.base.ref;
+  debug(`Fetching ${baseBranch} and refs/pull/${pullNumber}/head`);
+  await exec("git", ["fetch", "--no-tags", "origin", baseBranch, `+refs/pull/${pullNumber}/head`]);
   let diff = "";
   await exec("git", ["diff", `${baseSha}...${headSha}`], {
     listeners: { stdout: (data) => {

@@ -51,6 +51,10 @@ async function run() {
   const headSha = ctx.payload.pull_request.head.sha;
 
   // 2. Fetch diff (used by both gate and review)
+  const baseBranch = ctx.payload.pull_request.base.ref;
+  core.debug(`Fetching ${baseBranch} and refs/pull/${pullNumber}/head`);
+  await exec.exec('git', ['fetch', '--no-tags', 'origin', baseBranch, `+refs/pull/${pullNumber}/head`]);
+
   let diff = '';
   await exec.exec('git', ['diff', `${baseSha}...${headSha}`], {
     listeners: { stdout: (data) => { diff += data.toString(); } },

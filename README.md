@@ -13,25 +13,12 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
 
-      - name: Pre-fetch base and head refs
-        env:
-          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          git fetch --no-tags origin \
-            "$PR_BASE_REF" \
-            "+refs/pull/$PR_NUMBER/head"
-
-      - uses: tyraorg/code-review@v0.0.1
+      - uses: tyraorg/code-review@v0
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           github-token: ${{ github.token }}
 ```
-
-The checkout and pre-fetch steps are required so the action can run `git diff` to produce the diff it reviews.
 
 ## How it works
 
