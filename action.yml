@@ -1,0 +1,37 @@
+name: 'Tyra Code Review'
+description: 'Automated PR code review using OpenAI — gate, review, screen, and post inline findings.'
+author: 'Tyra'
+
+inputs:
+  openai-api-key:
+    description: 'OpenAI API key'
+    required: true
+  github-token:
+    description: 'GitHub token for reading PR data and posting reviews'
+    required: true
+  review-instructions:
+    description: 'Path (relative to workspace) to the review instructions file'
+    required: false
+    default: 'REVIEW.md'
+  model:
+    description: 'OpenAI model used for the main code review'
+    required: false
+    default: 'gpt-4o'
+  gate-model:
+    description: 'OpenAI model used for the gate and screening steps'
+    required: false
+    default: 'gpt-4o-mini'
+
+outputs:
+  verdict:
+    description: 'Review verdict: NO_ISSUES, REQUEST_CHANGES, or COMMENT'
+  should-review:
+    description: 'Whether the gate decided a review was warranted (true/false)'
+
+branding:
+  icon: 'search'
+  color: 'purple'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.cjs'

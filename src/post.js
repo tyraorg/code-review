@@ -1,0 +1,75 @@
+export async function postReview({ octokit, context, verdict, findings, core }) {
+  const { owner, repo } = context.repo;
+  const pullNumber = context.payload.pull_request.number;
+  const headSha = context.payload.pull_request.head.sha;
+
+  core.debug(`Post: verdict=${verdict} findings=${findings?.length ?? 0}`);
+
+  if (verdict === 'NO_ISSUES') {
+    core.info('Post: approving PR (no issues)');
+    await octokit.rest.pulls.createReview({
+      owner, repo, pull_number: pullNumber,
+      event: 'APPROVE',
+      body: '',
+    });
+    return;
+  }
+
+  if (!Array.isArray(findings) || findings.length === 0) {
+    core.info('Post: no findings after screening — skipping review.');
+    return;
+  }
+
+  const event = verdict === 'REQUEST_CHANGES' ? 'REQUEST_CHANGES' : 'COMMENT';
+  const emojiMap = { CRITICAL: '🔴', HIGH: '🟠', MEDIUM: '🟡', LOW: '🔵' };
+
+  const counts = {};
+  for (const f of findings) counts[f.severity] = (counts[f.severity] || 0) + 1;
+
+  const parts = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+    .filter((s) => counts[s])
+    .map((s) => `${emojiMap[s]} ${counts[s]} ${s[0]}${s.slice(1).toLowerCase()}`);
+
+  const summaryBody = `**Automated review:** ${parts.join(' · ')} — see inline comments.`;
+
+  core.info(`Post: submitting ${event} review with ${findings.length} inline comment(s) — ${parts.join(', ')}`);
+
+  await octokit.rest.pulls.createReview({
+    owner, repo, pull_number: pullNumber,
+    commit_id: headSha,
+    body: summaryBody,
+    event,
+  });
+
+  for (const finding of findings) {
+    const emoji = emojiMap[finding.severity] || '';
+    let body = `**${emoji} ${finding.title}**\n\n${finding.body}`;
+
+    if (finding.suggestion) {
+      body += `\n\n\`\`\`suggestion\n${finding.suggestion}\n\`\`\``;
+    }
+
+    core.debug(`Post: inline comment ${finding.path}:${finding.line} [${finding.severity}] ${finding.title}`);
+
+    const params = {
+      owner, repo,
+      pull_number: pullNumber,
+      commit_id: headSha,
+      path: finding.path,
+      line: finding.line,
+      side: 'RIGHT',
+      body,
+    };
+
+    if (finding.start_line && finding.start_line < finding.line) {
+      params.start_line = finding.start_line;
+      params.start_side = 'RIGHT';
+    }
+
+    try {
+      await octokit.rest.pulls.createReviewComment(params);
+    } catch (e) {
+      core.warning(`Could not post inline comment for ${finding.path}:${finding.line} — ${e.message}`);
+    }
+  }
+}
