@@ -9,7 +9,7 @@ function isProse(suggestion) {
   return !hasCodeChars && /^[A-Z][a-z].+[.!?]$/m.test(suggestion.trim());
 }
 
-export async function postReview({ octokit, context, verdict, findings, core }) {
+export async function postReview({ octokit, context, verdict, findings, hasOpenRequestChanges, core }) {
   const { owner, repo } = context.repo;
   const pullNumber = context.payload.pull_request.number;
   const headSha = context.payload.pull_request.head.sha;
@@ -17,6 +17,10 @@ export async function postReview({ octokit, context, verdict, findings, core }) 
   core.debug(`Post: verdict=${verdict} findings=${findings?.length ?? 0}`);
 
   if (verdict === 'NO_ISSUES') {
+    if (hasOpenRequestChanges) {
+      core.info('Post: no new issues, but prior change requests are still open — skipping approval.');
+      return;
+    }
     core.info('Post: approving PR (no issues)');
     await octokit.rest.pulls.createReview({
       owner, repo, pull_number: pullNumber,

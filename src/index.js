@@ -88,6 +88,8 @@ async function run() {
     (r) => r.state !== 'DISMISSED' && r.body
   ).length;
 
+  const hasOpenRequestChanges = existingReviews.some((r) => r.state === 'CHANGES_REQUESTED');
+
   const priorReviews = existingReviews
     .filter((r) => r.state !== 'DISMISSED' && r.body)
     .map((r) => `[${r.state}] ${r.user.login}: ${r.body}`)
@@ -131,7 +133,7 @@ async function run() {
   core.info(`Review verdict: ${verdict}`);
 
   // 9. Post review
-  await postReview({ octokit: reviewOctokit, context: ctx, verdict, findings, core });
+  await postReview({ octokit: reviewOctokit, context: ctx, verdict, findings, hasOpenRequestChanges, core });
 }
 
 run().catch((e) => core.setFailed(e.message));

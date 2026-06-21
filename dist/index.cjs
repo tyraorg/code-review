@@ -25913,12 +25913,16 @@ function isProse(suggestion) {
   const hasCodeChars = /[=({[<>;]/.test(suggestion);
   return !hasCodeChars && /^[A-Z][a-z].+[.!?]$/m.test(suggestion.trim());
 }
-async function postReview({ octokit, context: context3, verdict, findings, core }) {
+async function postReview({ octokit, context: context3, verdict, findings, hasOpenRequestChanges, core }) {
   const { owner, repo } = context3.repo;
   const pullNumber = context3.payload.pull_request.number;
   const headSha = context3.payload.pull_request.head.sha;
   core.debug(`Post: verdict=${verdict} findings=${findings?.length ?? 0}`);
   if (verdict === "NO_ISSUES") {
+    if (hasOpenRequestChanges) {
+      core.info("Post: no new issues, but prior change requests are still open \u2014 skipping approval.");
+      return;
+    }
     core.info("Post: approving PR (no issues)");
     await octokit.rest.pulls.createReview({
       owner,
@@ -26053,6 +26057,7 @@ async function run() {
   const priorReviewCount = existingReviews.filter(
     (r) => r.state !== "DISMISSED" && r.body
   ).length;
+  const hasOpenRequestChanges = existingReviews.some((r) => r.state === "CHANGES_REQUESTED");
   const priorReviews = existingReviews.filter((r) => r.state !== "DISMISSED" && r.body).map((r) => `[${r.state}] ${r.user.login}: ${r.body}`).join("\n---\n") || "No previous reviews.";
   debug(`Prior reviews: ${priorReviewCount}`);
   const instructionsFile = (0, import_path.join)(process.env.GITHUB_WORKSPACE || ".", reviewInstructionsPath);
@@ -26091,7 +26096,7 @@ async function run() {
   }
   setOutput("verdict", verdict);
   info(`Review verdict: ${verdict}`);
-  await postReview({ octokit: reviewOctokit, context: ctx, verdict, findings, core: core_exports });
+  await postReview({ octokit: reviewOctokit, context: ctx, verdict, findings, hasOpenRequestChanges, core: core_exports });
 }
 run().catch((e) => setFailed(e.message));
 /*! Bundled license information:
