@@ -26048,17 +26048,17 @@ async function run() {
     info("Gate: skipping review.");
     return;
   }
-  const { data: existingReviews } = await octokit.rest.pulls.listReviews({
-    owner,
-    repo,
-    pull_number: pullNumber,
-    per_page: 100
-  });
+  const [{ data: existingReviews }, { data: reviewComments }] = await Promise.all([
+    octokit.rest.pulls.listReviews({ owner, repo, pull_number: pullNumber, per_page: 100 }),
+    octokit.rest.pulls.listReviewComments({ owner, repo, pull_number: pullNumber, per_page: 100 })
+  ]);
   const priorReviewCount = existingReviews.filter(
     (r) => r.state !== "DISMISSED" && r.body
   ).length;
   const hasOpenRequestChanges = existingReviews.some((r) => r.state === "CHANGES_REQUESTED");
-  const priorReviews = existingReviews.filter((r) => r.state !== "DISMISSED" && r.body).map((r) => `[${r.state}] ${r.user.login}: ${r.body}`).join("\n---\n") || "No previous reviews.";
+  const priorReviewSummaries = existingReviews.filter((r) => r.state !== "DISMISSED" && r.body).map((r) => `[${r.state}] ${r.user.login}: ${r.body}`).join("\n---\n");
+  const priorInlineComments = reviewComments.map((c) => `${c.path}:${c.line ?? c.original_line} \u2014 ${c.body}`).join("\n");
+  const priorReviews = [priorReviewSummaries, priorInlineComments].filter(Boolean).join("\n\n") || "No previous reviews.";
   debug(`Prior reviews: ${priorReviewCount}`);
   const instructionsFile = (0, import_path.join)(process.env.GITHUB_WORKSPACE || ".", reviewInstructionsPath);
   let reviewMd = "";

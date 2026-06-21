@@ -79,10 +79,11 @@ async function run() {
     return;
   }
 
-  // 4. Fetch existing reviews for dedup + round-count
-  const { data: existingReviews } = await octokit.rest.pulls.listReviews({
-    owner, repo, pull_number: pullNumber, per_page: 100,
-  });
+  // 4. Fetch existing reviews + inline comments for dedup + round-count
+  const [{ data: existingReviews }, { data: reviewComments }] = await Promise.all([
+    octokit.rest.pulls.listReviews({ owner, repo, pull_number: pullNumber, per_page: 100 }),
+    octokit.rest.pulls.listReviewComments({ owner, repo, pull_number: pullNumber, per_page: 100 }),
+  ]);
 
   const priorReviewCount = existingReviews.filter(
     (r) => r.state !== 'DISMISSED' && r.body
@@ -90,10 +91,16 @@ async function run() {
 
   const hasOpenRequestChanges = existingReviews.some((r) => r.state === 'CHANGES_REQUESTED');
 
-  const priorReviews = existingReviews
+  const priorReviewSummaries = existingReviews
     .filter((r) => r.state !== 'DISMISSED' && r.body)
     .map((r) => `[${r.state}] ${r.user.login}: ${r.body}`)
-    .join('\n---\n') || 'No previous reviews.';
+    .join('\n---\n');
+
+  const priorInlineComments = reviewComments
+    .map((c) => `${c.path}:${c.line ?? c.original_line} — ${c.body}`)
+    .join('\n');
+
+  const priorReviews = [priorReviewSummaries, priorInlineComments].filter(Boolean).join('\n\n') || 'No previous reviews.';
 
   core.debug(`Prior reviews: ${priorReviewCount}`);
 
