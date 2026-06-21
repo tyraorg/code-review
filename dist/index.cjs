@@ -25759,24 +25759,65 @@ ${diffSnippet}
 }
 
 // src/review.js
-var OUTPUT_SCHEMA = `
+var BUILT_IN_RULES = `
+## General
+
+Be concise and specific. Only flag real issues \u2014 do not pad with generic advice.
+Do not suggest running build, install, or test commands.
+
+## Scope
+
+Only flag issues on lines present in the diff. Do not flag issues in unchanged lines, even if surrounding context reveals a problem.
+
+## What not to flag
+
+- Style, naming, formatting, or refactoring \u2014 handled by linters, out of scope.
+- Anything CI already enforces: type errors, lint, formatting.
+- Generated, compiled, or vendored files (build output, lockfiles, third-party code).
+- Test-only code that intentionally violates production rules.
+- Speculative or purely cosmetic observations with no concrete harm.
+
+## Security baseline
+
+- Hardcoded secrets or API keys \u2014 Critical; all secrets must come from environment variables.
+- PII in logs, error messages, or analytics events \u2014 High.
+- User-supplied data rendered without sanitization \u2014 at least High.
+
+## Behaviour by review round
+
+Your prompt includes PRIOR_REVIEW_COUNT \u2014 the number of automated reviews already posted on this PR.
+
+- 0 \u2014 First pass. Review the full diff thoroughly.
+- 1 \u2014 One round done. Review for new issues; prioritise checking whether prior issues are addressed.
+- 2 \u2014 Two rounds done. Focus on whether prior issues are resolved. Only flag new Critical or High issues.
+- 3+ \u2014 Focus on verifying all prior issues are resolved. Only flag genuinely new Critical or High issues.
+
+Do not re-raise any issue already listed in previous reviews. If a prior issue remains unresolved, note it briefly inside the body of a related finding rather than creating a separate one.
+
+## Self-screening
+
+Before finalising output, discard any finding that:
+- Cannot be demonstrated by a specific line present in the diff
+- Falls under "What not to flag" above
+- Duplicates an issue already in the previous reviews
+
 ## Output format
 
 Return ONLY a valid JSON array of findings, or the token <!-- NO_ISSUES --> if there are none.
 No markdown fences, no explanation outside the array.
 
-Each finding must have:
+Each finding must have these fields:
+- "path": relative file path (e.g. "src/hooks/useData.ts")
+- "line": line number of the last line of the affected range; must be a line present in the diff
+- "start_line": (optional) first line of a multi-line range; omit for single-line findings
 - "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
-- "title": short title
-- "body": explanation of the issue (plain prose, no code blocks)
-- "path": file path relative to repo root
-- "line": line number in the diff (the last line of the relevant hunk, RIGHT side)
-- "start_line": (optional) first line of a multi-line range
-- "suggestion": (optional) verbatim replacement lines for a GitHub suggestion block \u2014 actual
-  code only, no diff markers, no prose. Omit if no concrete code fix is possible.`;
+- "title": 5\u201310 word summary
+- "body": markdown explanation of the issue and its risk
+- "suggestion": (optional) verbatim replacement code for the flagged lines only \u2014 no surrounding
+  unchanged context, no diff markers, no prose. Omit if no concrete code fix can be proposed.`;
 async function runReview({ diff, reviewMd, prTitle, prBody, priorReviews, priorReviewCount, model, apiKey, core }) {
   const systemContent = reviewMd ? `${reviewMd}
-${OUTPUT_SCHEMA}` : OUTPUT_SCHEMA;
+${BUILT_IN_RULES}` : BUILT_IN_RULES;
   const userParts = [
     `PR: ${prTitle}`,
     `PRIOR_REVIEW_COUNT: ${priorReviewCount}`
@@ -25867,6 +25908,11 @@ ${JSON.stringify(findings, null, 2)}`;
 }
 
 // src/post.js
+function isProse(suggestion) {
+  if (/`(?![^`]*\${)[^`\n]+`/.test(suggestion)) return true;
+  const hasCodeChars = /[=({[<>;]/.test(suggestion);
+  return !hasCodeChars && /^[A-Z][a-z].+[.!?]$/m.test(suggestion.trim());
+}
 async function postReview({ octokit, context: context3, verdict, findings, core }) {
   const { owner, repo } = context3.repo;
   const pullNumber = context3.payload.pull_request.number;
@@ -25907,12 +25953,14 @@ async function postReview({ octokit, context: context3, verdict, findings, core 
     let body = `**${emoji} ${finding.title}**
 
 ${finding.body}`;
-    if (finding.suggestion) {
+    if (finding.suggestion && !isProse(finding.suggestion)) {
       body += `
 
 \`\`\`suggestion
 ${finding.suggestion}
 \`\`\``;
+    } else if (finding.suggestion) {
+      core.debug(`Post: dropping prose suggestion for ${finding.path}:${finding.line}`);
     }
     core.debug(`Post: inline comment ${finding.path}:${finding.line} [${finding.severity}] ${finding.title}`);
     const params = {

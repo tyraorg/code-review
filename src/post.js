@@ -1,3 +1,14 @@
+/**
+ * Returns true if the suggestion looks like prose rather than replacement code.
+ * Markdown inline-code spans (e.g. `identifier`) never appear in real code suggestions.
+ * A line with no code operators that reads as a complete sentence is also prose.
+ */
+function isProse(suggestion) {
+  if (/`(?![^`]*\${)[^`\n]+`/.test(suggestion)) return true;
+  const hasCodeChars = /[=({[<>;]/.test(suggestion);
+  return !hasCodeChars && /^[A-Z][a-z].+[.!?]$/m.test(suggestion.trim());
+}
+
 export async function postReview({ octokit, context, verdict, findings, core }) {
   const { owner, repo } = context.repo;
   const pullNumber = context.payload.pull_request.number;
@@ -45,8 +56,10 @@ export async function postReview({ octokit, context, verdict, findings, core }) 
     const emoji = emojiMap[finding.severity] || '';
     let body = `**${emoji} ${finding.title}**\n\n${finding.body}`;
 
-    if (finding.suggestion) {
+    if (finding.suggestion && !isProse(finding.suggestion)) {
       body += `\n\n\`\`\`suggestion\n${finding.suggestion}\n\`\`\``;
+    } else if (finding.suggestion) {
+      core.debug(`Post: dropping prose suggestion for ${finding.path}:${finding.line}`);
     }
 
     core.debug(`Post: inline comment ${finding.path}:${finding.line} [${finding.severity}] ${finding.title}`);

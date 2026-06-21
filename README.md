@@ -1,6 +1,6 @@
 # Code Review
 
-Automated PR code review using OpenAI. Reads your own `REVIEW.md` as the review brief, runs a three-stage pipeline (gate → review → screen), and posts findings as inline GitHub review comments.
+Automated PR code review using OpenAI. Reads your `REVIEW.md` as domain-specific review instructions, runs a three-stage pipeline (gate → review → screen), and posts findings as inline GitHub review comments.
 
 ## Usage
 
@@ -24,7 +24,7 @@ jobs:
 
 **Gate** — Before calling the review model the action checks whether the PR is worth reviewing at all. It first filters out files that can never introduce bugs (lock files, assets, translations, markdown). If reviewable files remain it sends the file list and a truncated diff to `gate-model` and asks for a YES/NO decision. PRs that touch only comments, copy changes, whitespace, or trivial renames are skipped with no further API calls.
 
-**Review** — The diff and the contents of `REVIEW.md` are sent to `model` via the OpenAI chat completions API. The model's output is expected to follow the format described in `REVIEW.md`: a verdict marker followed by a JSON array of findings.
+**Review** — The diff and the contents of `REVIEW.md` are sent to `model` via the OpenAI chat completions API. The action automatically appends built-in rules covering scope, output format, quality filters, a security baseline, and round behaviour — so your `REVIEW.md` only needs to describe what is specific to your project.
 
 **Screen** — A second, cheaper call to `gate-model` removes findings that duplicate an existing review, are style/formatting suggestions, or are vague and undemonstrated. Only genuine security vulnerabilities and correctness bugs survive.
 
@@ -50,32 +50,29 @@ jobs:
 
 ## REVIEW.md
 
-The action reads `REVIEW.md` from the root of your repository and uses it as the system prompt for the review model. This file is where you define what to look for, what to ignore, severity levels, output format, and any project-specific rules.
+Create a `REVIEW.md` at the root of your repository. This file is your review brief — describe what the model should look for and what it should ignore. The action handles scope enforcement and output format automatically; do not include those in your file.
 
-The model's output must follow a specific format for the action to parse it correctly:
+The action automatically handles scope enforcement, output format, round behaviour (dedup across review iterations), general quality rules (no style/lint findings, no speculative observations), and a security baseline (no hardcoded secrets, no PII in logs). You do not need to describe any of those.
 
-```
-<!-- NO_ISSUES -->
-```
+Put only project-specific context in `REVIEW.md`:
 
-or
+- What kind of project this is and the language/framework in use
+- Security rules specific to your stack (e.g. which sanitization library to use, how your auth model works, which query patterns must be scoped)
+- Any severity overrides for your domain
 
-```
-<!-- VERDICT: REQUEST_CHANGES -->
-[
-  {
-    "path": "src/components/Foo.tsx",
-    "line": 42,
-    "start_line": 40,
-    "severity": "HIGH",
-    "title": "Short title",
-    "body": "Markdown explanation of the issue.",
-    "suggestion": "optional replacement code"
-  }
-]
+Example:
+
+```markdown
+# Code Review Instructions
+
+You are reviewing a Pull Request for a React/TypeScript web application.
+
+## Security
+- User input passed to `dangerouslySetInnerHTML` without sanitization — Critical
+- All database queries must be scoped to the current user — High
 ```
 
-Use `<!-- VERDICT: COMMENT -->` when all findings are Medium or Low severity.
+If no `REVIEW.md` is found, the action runs with the built-in rules only.
 
 ## Debug logging
 
