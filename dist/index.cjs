@@ -25759,7 +25759,24 @@ ${diffSnippet}
 }
 
 // src/review.js
+var OUTPUT_SCHEMA = `
+## Output format
+
+Return ONLY a valid JSON array of findings, or the token <!-- NO_ISSUES --> if there are none.
+No markdown fences, no explanation outside the array.
+
+Each finding must have:
+- "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
+- "title": short title
+- "body": explanation of the issue (plain prose, no code blocks)
+- "path": file path relative to repo root
+- "line": line number in the diff (the last line of the relevant hunk, RIGHT side)
+- "start_line": (optional) first line of a multi-line range
+- "suggestion": (optional) verbatim replacement lines for a GitHub suggestion block \u2014 actual
+  code only, no diff markers, no prose. Omit if no concrete code fix is possible.`;
 async function runReview({ diff, reviewMd, prTitle, prBody, priorReviews, priorReviewCount, model, apiKey, core }) {
+  const systemContent = reviewMd ? `${reviewMd}
+${OUTPUT_SCHEMA}` : OUTPUT_SCHEMA;
   const userParts = [
     `PR: ${prTitle}`,
     `PRIOR_REVIEW_COUNT: ${priorReviewCount}`
@@ -25776,12 +25793,12 @@ Diff:
 ${diff}
 \`\`\``);
   const userMessage = userParts.join("\n");
-  core.debug(`Review: model=${model} system=${reviewMd.length} chars user=${userMessage.length} chars`);
+  core.debug(`Review: model=${model} system=${systemContent.length} chars user=${userMessage.length} chars`);
   try {
     const resp = await openaiPost(apiKey, {
       model,
       messages: [
-        { role: "system", content: reviewMd },
+        { role: "system", content: systemContent },
         { role: "user", content: userMessage }
       ],
       temperature: 0
@@ -26009,16 +26026,6 @@ async function run() {
     apiKey,
     core: core_exports
   });
-  let verdict;
-  if (reviewOutput.includes("<!-- NO_ISSUES -->")) {
-    verdict = "NO_ISSUES";
-  } else if (reviewOutput.includes("<!-- VERDICT: REQUEST_CHANGES -->")) {
-    verdict = "REQUEST_CHANGES";
-  } else {
-    verdict = "COMMENT";
-  }
-  setOutput("verdict", verdict);
-  info(`Review verdict: ${verdict}`);
   const findings = await screenFindings({
     reviewOutput,
     previousReviews: priorReviews,
@@ -26026,6 +26033,16 @@ async function run() {
     gateModel,
     core: core_exports
   });
+  let verdict;
+  if (reviewOutput.includes("<!-- NO_ISSUES -->") || findings.length === 0) {
+    verdict = "NO_ISSUES";
+  } else if (findings.some((f) => f.severity === "CRITICAL" || f.severity === "HIGH")) {
+    verdict = "REQUEST_CHANGES";
+  } else {
+    verdict = "COMMENT";
+  }
+  setOutput("verdict", verdict);
+  info(`Review verdict: ${verdict}`);
   await postReview({ octokit: reviewOctokit, context: ctx, verdict, findings, core: core_exports });
 }
 run().catch((e) => setFailed(e.message));

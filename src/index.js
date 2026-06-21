@@ -112,23 +112,23 @@ async function run() {
     model, apiKey, core,
   });
 
-  // 7. Parse verdict
+  // 7. Screen findings
+  const findings = await screenFindings({
+    reviewOutput, previousReviews: priorReviews,
+    apiKey, gateModel, core,
+  });
+
+  // 8. Derive verdict from screened findings
   let verdict;
-  if (reviewOutput.includes('<!-- NO_ISSUES -->')) {
+  if (reviewOutput.includes('<!-- NO_ISSUES -->') || findings.length === 0) {
     verdict = 'NO_ISSUES';
-  } else if (reviewOutput.includes('<!-- VERDICT: REQUEST_CHANGES -->')) {
+  } else if (findings.some((f) => f.severity === 'CRITICAL' || f.severity === 'HIGH')) {
     verdict = 'REQUEST_CHANGES';
   } else {
     verdict = 'COMMENT';
   }
   core.setOutput('verdict', verdict);
   core.info(`Review verdict: ${verdict}`);
-
-  // 8. Screen findings
-  const findings = await screenFindings({
-    reviewOutput, previousReviews: priorReviews,
-    apiKey, gateModel, core,
-  });
 
   // 9. Post review
   await postReview({ octokit: reviewOctokit, context: ctx, verdict, findings, core });
